@@ -35,7 +35,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-#define VENUSIAN_SAPI_VERSION "0.10.0"
+#define VENUSIAN_SAPI_VERSION "0.10.1"
 
 /* The CLI's own hard-coded settings, so the process behaves like php on a terminal. */
 static const char HARDCODED_INI[] =
@@ -356,6 +356,10 @@ int main(int argc, char **argv)
 			PG(during_request_startup) = 0;
 
 			venusian_register_file_handles();
+
+			/* As the CLI does: a "#!" first line is skipped in every file this request
+			 * compiles, so an app's bin script (rocket) can be required without printing it. */
+			CG(skip_shebang) = 1;
 
 			zend_stream_init_filename(&file_handle, venusian_phar);
 			file_handle.primary_script = 1;

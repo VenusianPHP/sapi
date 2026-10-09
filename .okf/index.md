@@ -6,7 +6,7 @@ generated: { by: "claude-fable-5-1", at: "2026-10-09T00:00:00Z" }
 
 # Venusian SAPI Knowledge Bundle
 
-The executable of a packaged Venusian app: `sapi/venusian` in a php-src tree, plain C. Version 0.10.0.
+The executable of a packaged Venusian app: `sapi/venusian` in a php-src tree, plain C. Version 0.10.1.
 
 # Core
 

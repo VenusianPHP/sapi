@@ -46,6 +46,7 @@ echo "== worker run (argv[1] names a script inside the phar)"
 OUT=$("$WORK/demo" "phar://$WORK/demo.phar/worker.php" a b)
 echo "$OUT"
 echo "$OUT" | grep -q '"worker":"worker.php"' || fail "worker script did not run"
+[ "$(echo "$OUT" | head -1 | cut -c1)" = "{" ] || fail "a script's shebang line was printed (CG(skip_shebang) unset)"
 
 echo "== symlink elsewhere still finds the phar"
 mkdir "$WORK/bin" && ln -s "$WORK/demo" "$WORK/bin/demo"
