@@ -1,0 +1,44 @@
+# Builds php-src with this SAPI on Linux and macOS and runs tests/smoke.sh, the same steps the README gives by hand.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }} / PHP ${{ matrix.php }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        php: ['8.4.26']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential autoconf
+
+      - name: Build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install autoconf
+
+      - name: php-src ${{ matrix.php }}
+        run: curl -fsSL "https://www.php.net/distributions/php-${{ matrix.php }}.tar.xz" | tar -xJ
+
+      - name: Build with the SAPI
+        run: |
+          mkdir -p "php-${{ matrix.php }}/sapi/venusian"
+          cp -r venusian.c config.m4 Makefile.frag tests "php-${{ matrix.php }}/sapi/venusian/"
+          cd "php-${{ matrix.php }}"
+          ./buildconf --force
+          ./configure --disable-all --enable-venusian --enable-cli --disable-cgi --disable-phpdbg --enable-phar --enable-zts
+          make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          ./sapi/venusian/venusian --venusian-version
+
+      - name: Smoke
+        run: sh tests/smoke.sh "php-${{ matrix.php }}/sapi/venusian/venusian" "php-${{ matrix.php }}/sapi/cli/php"
