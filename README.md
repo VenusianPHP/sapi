@@ -32,7 +32,7 @@ make -j"$(nproc)"
 tests/smoke.sh sapi/venusian/venusian sapi/cli/php
 ```
 
-Packs `tests/` into a phar with the stub shape `venusian/build` writes and checks the SAPI name, `PHP_BINARY`, `argv`, `php://fd`, the stream constants, worker dispatch, symlinked launch, the `.app` layout, the missing-phar message and exit codes. Prints `SMOKE_OK`.
+Packs `tests/` into a phar with the stub shape `venusian/build` writes and checks the SAPI name, `PHP_BINARY`, `argv`, `php://fd`, the stream constants, worker dispatch, symlinked launch, the `.app` layout, the missing-phar message, exit codes, and output going to the app's log when it is discarded (a pipe keeps it). Prints `SMOKE_OK`.
 
 ## Platforms
 

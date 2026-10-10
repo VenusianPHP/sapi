@@ -68,4 +68,21 @@ printf '<?php exit(7);' > "$WORK/exit.php"
 cp "$BIN" "$WORK/seven"
 "$WORK/seven" && fail "exit code lost" || [ $? -eq 7 ] || fail "exit code was not 7"
 
+echo "== discarded output goes to the app's log"
+printf '<?php fwrite(STDERR, "to-the-log\\n"); echo "out-too\\n";' > "$WORK/log.php"
+"$PHP" -d phar.readonly=0 -r '$p = new Phar($argv[1]); $p->addFile($argv[2], "x.php"); $p->setStub("<?php require \"phar://\".__FILE__.\"/x.php\"; __HALT_COMPILER();");' "$WORK/logger.phar" "$WORK/log.php"
+cp "$BIN" "$WORK/logger"
+HOME="$WORK/home" XDG_STATE_HOME= "$WORK/logger" > /dev/null 2> /dev/null
+case "$(uname)" in
+    Darwin) LOG="$WORK/home/Library/Logs/logger/logger.log" ;;
+    *) LOG="$WORK/home/.local/state/logger/logger.log" ;;
+esac
+grep -q to-the-log "$LOG" || fail "stderr did not reach $LOG"
+grep -q out-too "$LOG" || fail "stdout did not reach $LOG"
+grep -q "^--- .* pid [0-9]" "$LOG" || fail "$LOG has no header line"
+
+echo "== a pipe keeps its output"
+HOME="$WORK/home2" "$WORK/logger" 2>&1 | grep -q to-the-log || fail "piped stderr went elsewhere"
+[ ! -e "$WORK/home2" ] || fail "a log was written while stderr was a pipe"
+
 echo "SMOKE_OK"

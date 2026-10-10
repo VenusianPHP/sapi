@@ -12,6 +12,8 @@
  * own file name after symlinks are resolved. PHP_BINARY is the resolved
  * executable, so the framework's process pools spawn this program; the
  * phar's stub runs a script inside the phar when argv[1] names one.
+ * Started with its output discarded (Finder, a desktop menu), it writes to
+ * the app's log instead.
  */
 
 #include "php.h"
@@ -24,18 +26,21 @@
 #include "zend_stream.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
 
-#define VENUSIAN_SAPI_VERSION "0.10.1"
+#define VENUSIAN_SAPI_VERSION "0.10.2"
 
 /* The CLI's own hard-coded settings, so the process behaves like php on a terminal. */
 static const char HARDCODED_INI[] =
@@ -275,6 +280,94 @@ static char *venusian_find_phar(const char *executable, char candidates[3][PATH_
 	return NULL;
 }
 
+/* True when fd is closed or /dev/null: Finder, a desktop menu or launchd without a log gave the process nowhere to write. */
+static int venusian_output_discarded(int fd)
+{
+	struct stat out, null;
+
+	if (fstat(fd, &out) != 0) {
+		return 1;
+	}
+	if (stat("/dev/null", &null) != 0) {
+		return 0;
+	}
+
+	return S_ISCHR(out.st_mode) && out.st_rdev == null.st_rdev;
+}
+
+/* mkdir -p; 0 when the directory exists afterwards. */
+static int venusian_mkdirs(char *path)
+{
+	for (char *p = path + 1; *p != '\0'; p++) {
+		if (*p == '/') {
+			*p = '\0';
+			if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+				*p = '/';
+				return -1;
+			}
+			*p = '/';
+		}
+	}
+
+	return (mkdir(path, 0755) != 0 && errno != EEXIST) ? -1 : 0;
+}
+
+/*
+ * With stderr discarded, stderr (and stdout when it is discarded too) goes to the app's log:
+ * ~/Library/Logs/<name>/<name>.log on macOS, where Console lists it, and
+ * $XDG_STATE_HOME/<name>/<name>.log (default ~/.local/state) elsewhere. A terminal, a pipe,
+ * a file or the journal keeps the output it was given.
+ */
+static void venusian_route_output(const char *executable)
+{
+	const char *home = getenv("HOME");
+	const char *slash = strrchr(executable, '/');
+	const char *name = slash ? slash + 1 : executable;
+	char dir[PATH_MAX];
+	char log[PATH_MAX];
+	char stamp[32];
+	time_t now;
+	int fd;
+
+	if (!venusian_output_discarded(STDERR_FILENO) || home == NULL || home[0] == '\0') {
+		return;
+	}
+
+#ifdef __APPLE__
+	snprintf(dir, sizeof(dir), "%s/Library/Logs/%s", home, name);
+#else
+	{
+		const char *state = getenv("XDG_STATE_HOME");
+		if (state != NULL && state[0] == '/') {
+			snprintf(dir, sizeof(dir), "%s/%s", state, name);
+		} else {
+			snprintf(dir, sizeof(dir), "%s/.local/state/%s", home, name);
+		}
+	}
+#endif
+	if (venusian_mkdirs(dir) != 0 || snprintf(log, sizeof(log), "%s/%s.log", dir, name) >= (int) sizeof(log)) {
+		return;
+	}
+
+	fd = open(log, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd < 0) {
+		return;
+	}
+	if (fd != STDERR_FILENO) {
+		dup2(fd, STDERR_FILENO);
+	}
+	if (venusian_output_discarded(STDOUT_FILENO)) {
+		dup2(fd, STDOUT_FILENO);
+	}
+	if (fd > STDERR_FILENO) {
+		close(fd);
+	}
+
+	now = time(NULL);
+	strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+	fprintf(stderr, "--- %s %s pid %d\n", stamp, executable, (int) getpid());
+}
+
 int main(int argc, char **argv)
 {
 	int exit_status = 0;
@@ -300,6 +393,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "venusian: cannot resolve the executable's own path: %s\n", strerror(errno));
 		return 1;
 	}
+
+	venusian_route_output(executable);
 
 	venusian_phar = venusian_find_phar(executable, candidates, &candidate_count);
 	if (venusian_phar == NULL) {
